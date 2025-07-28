@@ -61,3 +61,33 @@ It looks like the code boils down to an if statement, corresponding to this asse
 ```
 
 So to mod, I think I can change 0f 8e 21 0a 00 00 to 90 90 90 90 90 90 to make it so that the if statement is bypassed
+
+Hmm, no, that's not a good idea. Better yet: track the memory location at RBX+0x451c to see where it's decremented, and mod that instead
+
+1. Debug with gdb
+
+1. Set breakpoint at RenderEndTurn
+
+1. Check value of RBX+0x451c
+
+1. Set watch point on address of RBX+0x451c
+
+1. Continue debugging
+
+1. Click reset turn
+
+Didn't work: the address of watch point was in a thread and when reset turn was clicked, thread was destroyed, address of RBX changed
+
+Next, searched the code for modifications of `0x451c`
+
+Boom:
+
+```
+$ objdump -d Breach | grep 0x451c
+  82b129:       e9 de b6 ff ff          jmp    82680c <glewInit+0x451c>
+  8a58c4:       83 af 1c 45 00 00 01    subl   $0x1,0x451c(%rdi)
+```
+
+Right away there's a decrement (0x451c - 1)
+
+Try patching it, and it worked!
