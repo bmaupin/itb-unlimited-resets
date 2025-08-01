@@ -1,5 +1,7 @@
 # Patch info
 
+## Unlimited resets
+
 #### How the patch works
 
 TODO
@@ -113,3 +115,114 @@ TODO
 1. Opening that address in Ghidra brought me to the function `BoardPlayer::UndoTurnUsed`; the first action is to decrement the value at 0x451c
 
 So I wrote a patcher that modifies the instruction to subtract 0 instead of 1, and tested. Indeed, I now had unlimited turn resets.
+
+## Hide the confirmation dialogue
+
+#### How the patch was created
+
+I noticed that clicking RESET TURN in the game caused a confirmation dialogue box to pop up, but using `undoturn` in the console did not. So I wanted to figure out how they were behaving differently in the code.
+
+1. In Ghidra, I looked for the string `undoturn`. It's only used in one function: `Game::UpdateConsole`
+
+   - In that function, if `undoturn` is entered, it does `Game::LoadGame("undoSave.lua")`
+
+1. In Ghidra, I looked for other undo turn functions and I found `BoardPlayer::UndoTurn`
+
+1. Run Breach with gdb
+
+   ⓘ Technically I used `rr` so I could record the debugging and move forward and backwards without having to redo it over and over
+
+1. I set breakpoints on various functions and then played with gdb running to figure out which functions were called
+
+   - When using `undoturn` in the console, it's pretty straightforward as it calls `LoadGame` directly
+   - When clicking the reset turn button, it was less straightforward
+     - `BoardPlayer::UndoTurn` was called
+     - At some point `LoadGame` was called
+     - Then LoadGame calls UndoTurnUsed
+
+1. I looked at `BoardPlayer::UndoTurn` in Ghidra
+
+   - Unfortunately it does not call `LoadGame` directly, but instead it does some checks (`BoardPlayer::IsUndoTurnPossible`) and then creates the confirmation dialogue
+
+   - But how is `LoadGame` called?
+
+1. I did another debug, setting a break on `BoardPlayer::UndoTurn`. Once that was hit, I set a break on `Game::LoadGame` and did a backtrace:
+
+   ```
+   #0  0x00000000004f7be0 in Game::LoadGame(std::basic_string<char, std::char_traits<char>, std::allocator<char> >) ()
+   #1  0x00000000004f9e83 in Game::OnLoop() ()
+   #2  0x000000000047f65f in CApp::OnLoop() ()
+   #3  0x0000000000481b98 in CApp::OnExecute() ()
+   #4  0x000000000040cb57 in main ()
+   ```
+
+1. Examine `0x4f9e83` in Game::OnLoop
+
+   - It seems LoadGame is called whenever the event `0x4d` is not set and the event `0xf` is set
+
+1. I found a function `EventSystem::AddEvent` so I used that to look for where the events are set
+
+   ```
+   $ objdump -d --demangle Breach | grep -B 6 AddEvent | egrep -w '0xf|0x4d'
+     67a825:       88 44 24 0f             mov    %al,0xf(%rsp)
+     8c9cba:       be 0f 00 00 00          mov    $0xf,%esi
+   ```
+
+1. I examined the addresses in Ghidra
+
+   - `0x8c9cba` is in `BoardPlayer::OnLoop`
+   - It creates the event `0xf` when the flag at `0x4520` is not 0
+
+1. Check for `0x4520`
+
+   ```
+   $ objdump -d --demangle Breach | grep -w 0x4520
+     8c25a9:       c6 83 20 45 00 00 01    movb   $0x1,0x4520(%rbx)
+     8c97bd:       80 bb 20 45 00 00 00    cmpb   $0x0,0x4520(%rbx)
+     8c9cc9:       c6 83 20 45 00 00 00    movb   $0x0,0x4520(%rbx)
+     8ca8aa:       c6 83 20 45 00 00 00    movb   $0x0,0x4520(%rbx)
+   ```
+
+1. Examine addresses in Ghidra, specifically where `0x4520` is set to 1
+
+   - It's set in `BoardPlayer::UpdateConfirm`
+   - In particular, it checks first that `0x4518` is set to 1
+
+1. Look for `0x4518`
+
+   ```
+   $ objdump -d --demangle Breach | grep -w 0x4518
+     8a722a:       c7 83 18 45 00 00 01    movl   $0x1,0x4518(%rbx)
+     8c1044:       c7 83 18 45 00 00 02    movl   $0x2,0x4518(%rbx)
+     8c2578:       8b 83 18 45 00 00       mov    0x4518(%rbx),%eax
+     8c26b8:       8b 83 18 45 00 00       mov    0x4518(%rbx),%eax
+     8ca896:       c7 83 18 45 00 00 00    movl   $0x0,0x4518(%rbx)
+     8cec84:       83 bb 18 45 00 00 02    cmpl   $0x2,0x4518(%rbx)
+   ```
+
+1. Where is `0x4518` set to 1?
+
+   - Boom: in `BoardPlayer::UndoTurn` before the confirmation dialogue is created
+   - So `0x4518` seems to be some kind of flag related to the logic of the confirmation dialogue and undo turn
+
+1. Try bypassing the confirmation dialogue logic
+
+   - In `BoardPlayer::UndoTurn`, I set an early return after `0x4518` is set but before the confirmation dialogue is created by doing an early jump
+     - However, this broke the reset turn button; clicking on it did nothing
+   - Looking more carefully over the previous findings, `0x4520` is checked before `0x4518` is checked
+
+1. Look over the code again
+
+   - Going back over previous findings above, `LoadGame` is called when the `0xf` event is set, which is created when `0x4520` is not 0
+   - `0x4520` is set to 1 in `BoardPlayer::UpdateConfirm` after checking `0x4518`
+   - But `BoardPlayer::UpdateConfirm` also checks the state of the confirmation dialogue created at `0x1160`, the same offset for the confirmation dialogue created in `UndoTurn`
+
+1. Set `0x4520` instead of `0x4518`
+
+   - Since the `0xf` event is created when `0x4520` is set, I modified `BoardPlayer::UndoTurn` to set `0x4520` instead of `0x4518`
+   - It worked! The confirmation dialogue was bypassed! But it was still being created and flashed briefly on the screen
+
+1. Try an early return again
+
+   - Now that the confirmation dialogue was bypassed, I tried an early return again in `BoardPlayer::UndoTurn` right after `0x4520` is set to skip the creation of the confirmation dialogue
+   - It worked! Now I had two patches which together would bypass the confirmation dialogue
