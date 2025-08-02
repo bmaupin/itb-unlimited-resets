@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "pe-library": "^1.0.1"
+  },
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^24.1.0"
+  }
+}
