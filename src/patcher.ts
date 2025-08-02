@@ -5,7 +5,7 @@ import * as PE from 'pe-library';
 process.removeAllListeners('warning');
 
 // Disable this to hide debugging messages
-const debug = true;
+const debug = false;
 if (!debug) {
   console.debug = () => {};
 }
@@ -16,9 +16,10 @@ const main = async () => {
 
   if (isWindowsBinary(fileData)) {
     console.log('Detected Windows binary format');
-    await patchWindowsFileData(fileData);
+    patchWindowsFileData(fileData);
   } else if (isLinuxBinary(fileData)) {
     console.log('Detected Linux binary format');
+    throw new Error('This functionality has not yet been implemented');
   }
 
   if (!debug) {
@@ -192,13 +193,13 @@ const dontBlockOnConfirmation = (fileData: Buffer, undoTurnOffset: number) => {
   const searchBytes = Buffer.from([
     0xc7, 0x86, 0x58, 0x45, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
   ]);
-  const flagOffset = findBytes(fileData.slice(undoTurnOffset), searchBytes);
-
+  const flagOffset =
+    findBytes(fileData.slice(undoTurnOffset), searchBytes) + undoTurnOffset;
   console.debug('flagOffset=', flagOffset);
 
   patchOffset(
     fileData,
-    undoTurnOffset + flagOffset,
+    flagOffset,
     Buffer.from([0xc7, 0x86, 0x60, 0x45, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00])
   );
 
@@ -213,17 +214,16 @@ const dontShowConfirmationPopup = (
   console.log(
     "Don't show the confirmation dialogue to prevent it from flashing"
   );
-  clearUndoTurnPushInstructions(fileData, undoTurnOffset, flagOffset);
-  skipConfirmationPopupCreation(fileData, undoTurnOffset, flagOffset);
+  clearUndoTurnPushInstructions(fileData, flagOffset);
+  skipConfirmationPopupCreation(fileData, flagOffset);
 };
 
 const clearUndoTurnPushInstructions = (
   fileData: Buffer,
-  undoTurnOffset: number,
   flagOffset: number
 ) => {
   // Start from undoTurnOffset + flagOffset, subtract 3 bytes and make sure that's an LEA instruction (0x8d)
-  const leaOffset = undoTurnOffset + flagOffset - 3;
+  const leaOffset = flagOffset - 3;
   const leaInstruction = fileData[leaOffset];
 
   if (leaInstruction !== 0x8d) {
@@ -265,26 +265,25 @@ const clearUndoTurnPushInstructions = (
 
 const skipConfirmationPopupCreation = (
   fileData: Buffer,
-  undoTurnOffset: number,
   flagOffset: number
 ) => {
   // Find the offset to jump to
   // 5911f4:       8b 4d f4                mov    -0xc(%ebp),%ecx
   const returnBytes = Buffer.from([0x8b, 0x4d, 0xf4]);
   const flagInstructionLength = 10;
-  const jumpOffset = undoTurnOffset + flagOffset + flagInstructionLength;
+  const jumpOffset = flagOffset + flagInstructionLength;
   const jumpInstructionLength = 5;
-  const returnOffset = findBytes(
+  const returnRelativeOffset = findBytes(
     fileData.slice(jumpOffset + jumpInstructionLength),
     returnBytes
   );
-  console.debug('returnOffset=', returnOffset);
+  console.debug('returnRelativeOffset=', returnRelativeOffset);
 
   // Patch the JMP instruction to skip the confirmation dialogue
   //  59114d:       e9 a2 00 00 00          jmp    0x5911f4
   const jumpPatchBytes = Buffer.from([
     0xe9, // JUMP
-    ...toLittleEndianBytes(returnOffset),
+    ...toLittleEndianBytes(returnRelativeOffset),
     // We're writing a 5-byte instruction over a 7-byte instruction, so NOP the final bytes
     0x90,
     0x90,
