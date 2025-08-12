@@ -550,3 +550,123 @@ Conclusions:
 
 - 0x4a722a: modify 0x4520 instead of 0x4518
 - 0x4a7234: set to JMP
+
+## Keep reset turn button visible during enemy turn
+
+#### Summary
+
+It doesn't seem possible:
+
+- All the logic for the reset turn button display is in RenderEndTurn
+  - It gets called by OnRenderUI, which is where I think the logic is checked to see if it's enemy or player turn
+    - Enemy or player turn are controlled by StartState
+- Looking through RenderEndTurn, it contains all of the logic for showing the end turn button, reset turn button, and undo move button. There's no way to show just the reset turn button
+- Using gdb to bypass the call to RenderEndTurn confirms that it contains the logic for those three buttons. The logic is too complex and intertwined to be able to reproduce the functionality just to show the reset turn button
+
+### Code
+
+- The button is `Button_UndoTurn`
+- End turn button is `Button_EndTurn`
+- Undo move button is `Button_Undo`
+- When _End Turn_ is clicked, `Button_UndoTurn` disappears
+  - _End Turn_ is disabled and then disappears, hidden behind _WARNING_ _ENEMY ACTIVITY_ message
+    - `Enemy_Activity_1`
+    - `Enemy_Activity_2`
+  - _ENEMY TURN_ flashes on the screen
+    - `State_Enemy`
+  - _UNDO MOVE_ also disappears
+- Functions
+  - `BoardPlayer::EndTurn`
+  - `RenderDeployment`
+    `
+
+#### Buttons
+
+- RenderEndTurn
+  - this_00: 0x208
+    - End turn button?
+  - this_01: 0x5b8
+    - Undo move button
+  - this_02: 0x790
+    - Reset turn button
+- OnRenderUI
+  - BoardPlayer + 0x3e0
+    - Start turn?
+    - Related to 0x1850
+    - Disabled when 0x1b5c is true
+    - Enabled when 0x1b5c is false
+    - Disabled and enabled when 0x4588 is true
+  - BoardPlayer + 0x1f68
+    - ?
+  - BoardPlayer + 0x39d8
+    - Options?
+
+#### Reset turn button
+
+- RenderEndTurn
+- OnRenderUI
+
+#### StartState
+
+- param_1
+  - 0: player turn
+  - 1: enemy attack
+  - 2: enemy movement
+
+#### RenderEndTurn
+
+- Button logic checks 0x1850 == 0?
+
+#### Logic
+
+- Clicking End Turn calls BoardPlayer::EndTurn
+  - This shows a confirmation dialogue popup
+    - This confirmation is stored at BoardPlayer + 0x1160
+    - 0x1160 is where all of the confirmation dialogues are stored, so not meaningful here I don't think
+  - Sets 0x4518 to 2
+    - This was set to 1 in UndoTurn; maybe we need to find where it's checked for a value of 2?
+  - Calls StartState with a value of 1
+- BoardPlayer::OnRenderUI checks if 0x4518 is 2
+  - First checks if 0x1168 is not 0, then calls RenderActiveUnits
+  - I think this is just keeping the rendering loop going if the confirm dialogue hasn't been clicked yet
+- BoardPlayer::UpdateConfirm
+  - I think this checks the result of the confirmation dialogue
+  - Calls StartState with a value of 1
+
+### Ideas
+
+- Look at logic that disables _End Turn_ button when clicked
+- Look at `BoardPlayer` state
+  - `0x4551` (set to 1 in `UpdateEndTurn`)
+- Breakpoints
+  - `BoardPlayer::EndState`
+  - `BoardPlayer::EndTurn`
+  - `BoardPlayer::IsEnemyTurn`
+  - `BoardPlayer::OnRenderUI`
+  - `BoardPlayer::RenderEndTurn`
+  - `BoardPlayer::StartState`
+  - `BoardPlayer::UpdateEndTurn`
+  - `Button::SetActive`
+
+#### To do
+
+- [x] Investigate Button::SetActive in RenderEndTurn
+  - Button::SetActive simply enables or disables the button
+- [ ] Figure out which code is hiding/showing the button
+  - [ ] Set breakpoints
+  - [ ] Find where 0x1160 popup confirmation is checked
+- [ ] StartState
+  - Is this setting something checked elsewhere in the render code?
+  - What's rendering the button?
+    - OnRender
+  - Is the button being not rendered or hidden?
+    - SetWidth
+    - SetAlpha
+    - SetLocation
+- [ ] Figure out what the relevant functions are and check to see when they're called for 0x790
+  - Button::OnRender
+  - KaijuButton::OnRender
+- [ ] Look again for strings
+  - `undo_turn_rect`
+  - `Button_UndoTurn`
+  - `undo_turn`
