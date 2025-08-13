@@ -3,8 +3,10 @@
     "elfinfo": "^0.4.0-beta",
     "pe-library": "^1.0.1"
   },
-  "type": "module",
   "devDependencies": {
-    "@types/node": "^24.1.0"
-  }
+    "@types/node": "^24.1.0",
+    "esbuild": "^0.25.9",
+    "nexe": "^5.0.0-beta.4"
+  },
+  "type": "module"
 }
