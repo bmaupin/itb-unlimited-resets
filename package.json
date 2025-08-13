@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "elfinfo": "^0.4.0-beta",
     "pe-library": "^1.0.1"
   },
   "type": "module",
