@@ -670,3 +670,20 @@ It doesn't seem possible:
   - `undo_turn_rect`
   - `Button_UndoTurn`
   - `undo_turn`
+
+## Windows/unified patch
+
+#### UndoTurn
+
+- Windows function address: `000591100`
+- Windows flag offset: `0x4558`
+- Linux flag offset: `0x4518`
+- Identifiable by strings:
+  - `Reset_Turn`
+  - `Reset_TurnExtra`
+  - `Reset_TurnFinal`
+
+#### UndoTurnUsed
+
+- Since the Linux offset is `0x451c`, we can use the offset `0x455c` (based on `UndoTurn`)
+- Then search for a decrement to `0x455c

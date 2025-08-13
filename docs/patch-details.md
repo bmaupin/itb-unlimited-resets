@@ -226,3 +226,25 @@ I noticed that clicking RESET TURN in the game caused a confirmation dialogue bo
 
    - Now that the confirmation dialogue was bypassed, I tried an early return again in `BoardPlayer::UndoTurn` right after `0x4520` is set to skip the creation of the confirmation dialogue
    - It worked! Now I had two patches which together would bypass the confirmation dialogue
+
+## Windows patch
+
+All of the above was developed with the Linux binary, which has function names and some other debug symbols not stripped.
+
+For Windows, all of the function names were stripped, but I was able to get a working patch:
+
+1. I knew the `UndoTurn` function contained the string `Reset_Turn`, so I was able to find it by searching for the function where that string was referenced
+
+1. In that function, I saw that the value at offset `0x4558` was being set to 1. In Linux, the offset is `0x4518`, so I deduced that the windows offsets were off by `0x40`
+
+1. `UndoTurnUsed` doesn't have any string references, but in Linux it decrements the value at offset `0x451c`. So I searched the binary for decrements to the value at offset `0x455c` (`0x451c` plus `0x40`). I was able to find a decrement instruction that ended up being what I was looking for:
+
+   ```
+   $ objdump -d --demangle Breach.exe | grep -A 3 -w 0x455c | grep -B 3 dec
+   --
+     589a98:       8b 91 5c 45 00 00       mov    0x455c(%ecx),%edx
+     589a9e:       8d 45 f0                lea    -0x10(%ebp),%eax
+     589aa1:       4a                      dec    %edx
+   ```
+
+1. Once I found the two functions, it was mostly a matter of applying the same patches. One notable difference is that when I tried to add a jump to `UndoTurn` for an early return, the game was crashing. It turned out that before `0x4558` was set to 1, there were a couple of PUSH instructions that modified the stack. I had to replace these with NOP so that the stack pointer would be in the right place when the function returned to prevent the crashes.
