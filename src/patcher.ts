@@ -11,16 +11,16 @@ if (!debug) {
   console.debug = () => {};
 }
 
-const UNSUPPORTED_BINARY = 'Error: File is neither a Linux nor Windows binary';
+const UNSUPPORTED_BINARY = 'File is neither a Linux nor Windows binary';
 
 const main = async () => {
   const fileToPatch = getArguments();
   const fileData = await fs.readFile(fileToPatch);
 
   if (isLinuxBinary(fileData)) {
-    console.log('Detected Linux binary format');
+    console.log('Detected Linux binary');
   } else if (isWindowsBinary(fileData)) {
-    console.log('Detected Windows binary format');
+    console.log('Detected Windows binary');
   } else {
     throw new Error(UNSUPPORTED_BINARY);
   }
@@ -35,8 +35,7 @@ const main = async () => {
 
 const getArguments = () => {
   if (process.argv.length !== 3) {
-    console.error('Error: Please provide the path to the file to patch');
-    process.exit(1);
+    throw new Error('Please provide the path to the file to patch');
   }
 
   const fileToPatch = process.argv[2];
@@ -152,10 +151,9 @@ const findUndoTurnOffset = async (fileData: Buffer) => {
   }
 
   if (undoTurnOffset === -1) {
-    console.error(
+    throw new Error(
       'Unable to find the start of the function that uses the Reset_TurnFinal address'
     );
-    process.exit(1);
   }
 
   return undoTurnOffset;
@@ -268,35 +266,32 @@ const clearUndoTurnPushInstructions = (
   const leaInstruction = fileData[leaOffset];
 
   if (leaInstruction !== 0x8d) {
-    console.error(
+    throw new Error(
       `Expected LEA instruction at offset 0x${leaOffset.toString(
         16
       )}, but found 0x${leaInstruction.toString(16)}`
     );
-    process.exit(1);
   }
 
   // The instruction right before that should be a PUSH (0x68)
   const pushInstruction = fileData[leaOffset - 5];
 
   if (pushInstruction !== 0x68) {
-    console.error(
+    throw new Error(
       `Expected PUSH instruction at offset 0x${(leaOffset - 1).toString(
         16
       )}, but found 0x${pushInstruction.toString(16)}`
     );
-    process.exit(1);
   }
 
   // The instruction right before that should be another PUSH (0x6a)
   const secondPushInstruction = fileData[leaOffset - 7];
   if (secondPushInstruction !== 0x6a) {
-    console.error(
+    throw new Error(
       `Expected second PUSH instruction at offset 0x${(leaOffset - 2).toString(
         16
       )}, but found 0x${secondPushInstruction.toString(16)}`
     );
-    process.exit(1);
   }
 
   // NOP out both push instructions to ensure the stack pointer is not altered
@@ -308,9 +303,10 @@ const findBytes = (fileData: Buffer, searchBytes: Buffer): number => {
   // Find the offset of the search bytes in the file data
   const offset = fileData.indexOf(searchBytes);
   if (offset === -1) {
-    console.error('Bytes not found in file:', searchBytes);
     throw new Error(
-      'Unable to find address to patch; has the file already been patched?'
+      `Unable to find bytes to patch (${searchBytes.toString(
+        'hex'
+      )}); has the file already been patched?`
     );
   }
   return offset;
@@ -342,7 +338,7 @@ const fileOffsetToVirtualAddress = async (
     const info = await open(fileData);
     const textSection = info.elf?.sections.find((s) => s.name === '.text');
     if (!textSection) {
-      throw new Error('Error: Unable to find .text section in ELF binary');
+      throw new Error('Unable to find .text section in ELF binary');
     }
 
     const textFileOffset = textSection.offset;
@@ -370,4 +366,7 @@ const toLittleEndianBytes = (num) => {
   return buf;
 };
 
-main();
+main().catch((err) => {
+  console.error('Error:', err.message);
+  process.exit(1);
+});
