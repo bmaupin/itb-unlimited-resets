@@ -1,12 +1,18 @@
 # Patch info
 
-## Unlimited resets
+## How the patch works
 
-#### How the patch works
+The patch consists of these modifications:
 
-TODO
+1. The game has a counter for how many turn resets the player has available. In order to give unlimited turn resets, the patch prevents that counter from being decreased.
 
-#### How the patch was created
+1. To bypass the confirmation dialogue when Reset Turn is clicked, the code that sets the variable used to check the result of the confirmation is replaced to instead set the variable used to trigger the event that resets the turn.
+
+1. But the confirmation dialogue will still briefly flash. To prevent this, the code that creates the confirmation dialogue is bypassed altogether with an early return from the function.
+
+## How the patch was created
+
+#### Unlimited resets
 
 1. First, I searched the Lua files for relevant strings:
 
@@ -116,9 +122,7 @@ TODO
 
 So I wrote a patcher that modifies the instruction to subtract 0 instead of 1, and tested. Indeed, I now had unlimited turn resets.
 
-## Hide the confirmation dialogue
-
-#### How the patch was created
+#### Hide the confirmation dialogue
 
 I noticed that clicking RESET TURN in the game caused a confirmation dialogue box to pop up, but using `undoturn` in the console did not. So I wanted to figure out how they were behaving differently in the code.
 
@@ -227,7 +231,7 @@ I noticed that clicking RESET TURN in the game caused a confirmation dialogue bo
    - Now that the confirmation dialogue was bypassed, I tried an early return again in `BoardPlayer::UndoTurn` right after `0x4520` is set to skip the creation of the confirmation dialogue
    - It worked! Now I had two patches which together would bypass the confirmation dialogue
 
-## Windows patch
+#### Windows patch
 
 All of the above was developed with the Linux binary, which has function names and some other debug symbols not stripped.
 
